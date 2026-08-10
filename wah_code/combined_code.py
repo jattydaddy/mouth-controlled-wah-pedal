@@ -5,7 +5,7 @@ from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 import mido
 
-port_name = 'pythonmidi 1' # Name of MIDI port set in loopMIDI
+port_name = "pythonmidi 1" # Name of MIDI port set in loopMIDI
 
 # Settings
 lip_distance_max = 20 # Max mouth wideness - A lower value means that the CC value reaches 127 with less lip movement
@@ -35,18 +35,18 @@ while cap.isOpened(): # While camera is being captured
         top_lip = landmarks[13] # The top and bottom lips are number 13 and 14 in the face mesh - give them variable names
         bottom_lip = landmarks[14]
 
-        h, w, _ = frame.shape # Gets width and height of the video frame
+        h, _, _ = frame.shape # Gets height of the video frame
         lip_distance = int(bottom_lip.y * h - top_lip.y * h) # Set variable lip_distance to the distance between the lips
 
     percentage = ((lip_distance - lip_distance_min) / range * 100) # Turn lip distance into a percentage, this will hopefully make it easier to work with later.
-    percentage = max(0, min(percentage, 100)) # Set upper and lower bounds of the percentage number
+    percentage = max(0, min(percentage, 100)) # Set upper and lower bounds of the percentage number so that it wont go under 0 and over 100
 
     cc_value = int(127 * (percentage / 100))
 
     with mido.open_output(port_name) as port: # Opens the MIDI port
         port.send(mido.Message('control_change', channel=0, control=11, value=cc_value)) # Sends CC message to CC11(the CC number usually used for expression)
     
-    cv2.imshow('Lip Tracker', frame) # Opens a window showing the frame
+    cv2.imshow('Lip Tracker', frame) # Opens a window showing the video frame
     if cv2.waitKey(1) & 0xFF == 27: # Exit loop when escape is pressed
         break
 
