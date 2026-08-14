@@ -30,7 +30,7 @@ def load_settings():
         "wah_max": data.get("wah_max", 10.0)
     }
 
-# Color variables
+# Color variables   
 background = "#171516"
 buttons = "#1D1B36"
 header = "#1D1B36"
