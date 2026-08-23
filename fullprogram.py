@@ -22,10 +22,9 @@ ui.query("body").style(f"background-color: {background}") # Set background colou
 # Create empty container for all the pages. Has 1 or 3 columns based off screen width
 content = ui.element("div").classes("text-white w-full grid grid-cols-1 lg:grid-cols-3")
 
-# Python MIDI
 port_name = "pythonmidi 1" # Name of MIDI port set in loopMIDI
 
-# Settings
+# Face tracking settings
 lip_distance_max = 20 # Max mouth wideness - A lower value means that the CC value reaches 127 with less lip movement
 lip_distance_min = 0 # Min mouth wideness - When mouth wideness is lower or equal to this, the CC value is zero
 range = lip_distance_max - lip_distance_min # Find range of lip distances
@@ -34,6 +33,7 @@ live_percent = {"percentage": 55}
 
 # Function for face tracking and MIDI
 def face_tracking():
+    global live_percent
     base_options = python.BaseOptions(model_asset_path='face_landmarker.task') # Loads the face-tracking model file
     options = vision.FaceLandmarkerOptions(
         base_options=base_options,
@@ -77,13 +77,12 @@ def face_tracking():
     cap.release()
     cv2.destroyAllWindows()
 
-# Start thread
+# Start face tracking thread
 thread = threading.Thread(target=face_tracking, daemon=True)
 thread.start()
 
 # Settings code
 settings_file = "settings.json"
-
  # Function to update the JSON file
 def save_settings(wah_min, wah_max):
     # Values of the settings stored in a dictionary
@@ -95,7 +94,6 @@ def save_settings(wah_min, wah_max):
     # Write dictionary into file
     with open(settings_file, "w") as f:
         json.dump(setting_values, f) 
-
 # Load the stored values into variables
 def load_settings():    
     # Open JSON file in read mode and get the values in the dictionary.
@@ -106,6 +104,7 @@ def load_settings():
         "wah_max": data.get("wah_max", 10.0)
     }
 
+# Gauge code
 # Variable for the wah gauge
 gauge_max = 722
 # Gauge function
@@ -123,52 +122,80 @@ def gauge(value, gauge_html):
     gauge_html.update()
 
 # Functions for each page
-def home():
-    with content:
-        title.set_text("Wah") # Changes title
+def wah_content():
+    gauge_html = ui.html().classes("flex justify-center pt-20") # Creates an element for the HTML of the gauge
 
-        gauge_html = ui.html().classes("flex justify-center pt-20") # Creates an element for the HTML of the gauge
+    ui.timer(0.05, lambda: print(live_percent["percentage"]))
 
-        ui.timer(0.05, lambda: gauge(live_percent["percentage"], gauge_html))
-
-def calibrate():
-    with content:
-        title.set_text("Calibrate")
+def calibrate_content():
+    pass
         
-def settings(): 
-    with content:
-        title.set_text("Settings")
+def settings_content(): 
+    setting_values = load_settings()
 
-        setting_values = load_settings()
-    
-        ui.label("Wah Minimum").classes("text-xl py-8")
-        ui.slider(min=0, max=10, step=0.1, value=setting_values["wah_min"]).props("label-always")\
-        .on("change", lambda e: print(e.args))
+    ui.label("Wah Minimum").classes("text-xl py-8")
+    min_slider = ui.slider(min=0, max=10, step=0.1, value=setting_values["wah_min"]).props("label-always")
 
-        ui.label("Wah Maximum").classes("text-xl py-8")
-        ui.slider(min=0, max=10, step=0.1, value=setting_values["wah_max"]).props("label-always")\
-        .on("change", lambda e: print(e.args))
+    ui.label("Wah Maximum").classes("text-xl py-8")
+    max_slider = ui.slider(min=0, max=10, step=0.1, value=setting_values["wah_max"]).props("label-always")
 
+    # Saves slider values
+    def update_json():
+        save_settings(min_slider.value, max_slider.value)
+
+    min_slider.on("change", update_json)
+    max_slider.on("change", update_json)
 
 # Creates header with a title
 with ui.header().style(f"background-color: {header}")\
-    .classes("rounded-b-3xl h-16"):
+    .classes("rounded-b-3xl h-16 lg:hidden"):
     title = ui.label("Wah").classes("text-2xl")
+
+# Render all pages. If screen is wider than 1024px, it will override the visibility settings and display all tabs on the same page
+with content:
+    with ui.element("div").classes("w-full lg:block!") as wah_page:
+        wah_content()
+
+    with ui.element("div").classes("w-full lg:block!") as calibrate_page:
+        calibrate_content()
+
+    with ui.element("div").classes("w-full lg:block!") as settings_page:
+        settings_content()
+
+# Hide or unhide pages according to which button user taps
+def show_wah():
+    title.set_text("Wah")
+    wah_page.set_visibility(True)
+    calibrate_page.set_visibility(False)
+    settings_page.set_visibility(False)
+
+def show_calibrate():
+    title.set_text("Calibrate")
+    wah_page.set_visibility(False)
+    calibrate_page.set_visibility(True)
+    settings_page.set_visibility(False)
+
+def show_settings():
+    title.set_text("Settings")
+    wah_page.set_visibility(False)
+    calibrate_page.set_visibility(False)
+    settings_page.set_visibility(True)
+
 
 # Footer with 3 column grid. Hide nav bar if screen width is wider than 1024px, so it won't show on a desktop device.
 with ui.footer().classes("grid grid-cols-3 h-25 p-0 gap-0 lg:hidden")\
     .style(f"background-color: {background}"):
 
     # Creates buttons for the spaces in the grid - Each button occupies its respective third of the nav bar
-    ui.button("Wah", color=buttons, on_click=home).props("flat")\
+    ui.button("Wah", color=buttons, on_click=show_wah).props("flat")\
         .classes("h-full w-full rounded-none text-white rounded-tl-3xl")
     
-    ui.button("Calibrate", color=buttons, on_click=calibrate).props("flat")\
+    ui.button("Calibrate", color=buttons, on_click=show_calibrate).props("flat")\
         .classes("h-full w-full rounded-none text-white")
 
-    ui.button("Settings", color=buttons, on_click=settings).props("flat")\
+    ui.button("Settings", color=buttons, on_click=show_settings).props("flat")\
         .classes("h-full w-full rounded-none text-white rounded-tr-3xl")
 
-home() # Make the webapp load into the homepage
+show_wah()
 
 ui.run()
