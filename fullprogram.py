@@ -7,6 +7,7 @@ import mido
 from nicegui import ui
 import json
 import threading
+import os
 
 '''
 Credits to Theo Barnes for the icon designs. He was commissioned to create masterful pieces using his artistic skill.
@@ -15,9 +16,20 @@ Credits to Theo Barnes for the icon designs. He was commissioned to create maste
 # Color variables   
 background = "#171516"
 buttons = "#1D1B36"
+text_box = "#1D1B36"
 header = "#1D1B36"
 ui.colors(primary="#e01a4f") 
 ui.query("body").style(f"background-color: {background}") # Set background colour
+
+# Fix for error button and text contrast. Makes the "Close" button solid white and bold.
+ui.add_head_html('''
+    <style>
+        .q-notification__actions .q-btn {
+            color: #FFFFFF !important;
+            font-weight: bold !important;
+        }
+    </style>
+''')
 
 # Create empty container for all the pages. Has 1 or 3 columns based off screen width
 content = ui.element("div").classes("text-white w-full grid grid-cols-1 lg:grid-cols-3")
@@ -29,11 +41,11 @@ lip_distance_max = 20 # Max mouth wideness - A lower value means that the CC val
 lip_distance_min = 0 # Min mouth wideness - When mouth wideness is lower or equal to this, the CC value is zero
 range = lip_distance_max - lip_distance_min # Find range of lip distances
 
-live_percent = {"percentage": 55}
+live_percent = {"percentage":55}
+midi_error = None
 
 # Function for face tracking and MIDI
 def face_tracking():
-    global live_percent
     base_options = python.BaseOptions(model_asset_path='face_landmarker.task') # Loads the face-tracking model file
     options = vision.FaceLandmarkerOptions(
         base_options=base_options,
@@ -42,40 +54,42 @@ def face_tracking():
     detector = vision.FaceLandmarker.create_from_options(options)
     cap = cv2.VideoCapture(0) # Starts capturing video from camera
 
-    with mido.open_output(port_name) as port: # Opens the MIDI port
-        while cap.isOpened(): # While camera is being captured
-            success, frame = cap.read() # Gets frame from camera
-            if not success: break # End loop if it fails to grab camera frame 
-
-            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)) # Format frame of video into a colour format mediapipe can read
-            timestamp_ms = int(time.time() * 1000) # Tracks the time the camera has been on
-            
-            result = detector.detect_for_video(mp_image, timestamp_ms) # Processes the frame, assigning it a timestamp
-            lip_distance = 0
-            if result.face_landmarks: # If there is a face detected
-                landmarks = result.face_landmarks[0] # Gets the landmark data for the face
-                
-                top_lip = landmarks[13] # The top and bottom lips are number 13 and 14 in the face mesh - give them variable names
-                bottom_lip = landmarks[14]
-
-                h, _, _ = frame.shape # Gets height of the video frame
-                lip_distance = int(bottom_lip.y * h - top_lip.y * h) # Set variable lip_distance to the distance between the lips
-
-            wah_percent = ((lip_distance - lip_distance_min) / range * 100) # Turn lip distance into a percentage, this will hopefully make it easier to work with later.
-            wah_percent = max(0, min(wah_percent, 100)) # Set upper and lower bounds of the percentage number so that it wont go under 0 and over 100
-
-            live_percent["percentage"] = wah_percent
-
-            cc_value = int(127 * (wah_percent / 100))
-
-            port.send(mido.Message('control_change', channel=0, control=11, value=cc_value)) # Sends CC message to CC11(the CC number usually used for expression)
+    port = None
+    try:
+        port = mido.open_output(port_name)
+    except Exception:
+        global midi_error
+        midi_error = f"Could not open MIDI port {port_name}"
         
-            cv2.imshow('Lip Tracker', frame) # Opens a window showing the video frame
-            if cv2.waitKey(1) & 0xFF == 27: # Exit loop when escape is pressed
-                break
+    while cap.isOpened(): # While camera is being captured
+        success, frame = cap.read() # Gets frame from camera
+        if not success: break # End loop if it fails to grab camera frame 
 
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)) # Format frame of video into a colour format mediapipe can read
+        timestamp_ms = int(time.time() * 1000) # Tracks the time the camera has been on
+        
+        result = detector.detect_for_video(mp_image, timestamp_ms) # Processes the frame, assigning it a timestamp
+        lip_distance = 0
+        if result.face_landmarks: # If there is a face detected
+            landmarks = result.face_landmarks[0] # Gets the landmark data for the face
+            
+            top_lip = landmarks[13] # The top and bottom lips are number 13 and 14 in the face mesh - give them variable names
+            bottom_lip = landmarks[14]
+
+            h, _, _ = frame.shape # Gets height of the video frame
+            lip_distance = int(bottom_lip.y * h - top_lip.y * h) # Set variable lip_distance to the distance between the lips
+
+        wah_percent = ((lip_distance - lip_distance_min) / range * 100) # Turn lip distance into a percentage, this will hopefully make it easier to work with later.
+        wah_percent = max(0, min(wah_percent, 100)) # Set upper and lower bounds of the percentage number so that it wont go under 0 and over 100
+
+        live_percent["percentage"] = wah_percent # Mutates dictionary so gauge can update according to this percentage value
+
+        cc_value = int(127 * (wah_percent / 100)) # Convert percentage to a value from 0 to 127
+        if port:
+            port.send(mido.Message('control_change', channel=0, control=11, value=cc_value)) # Sends CC message to CC11(the CC number usually used for expression)
+    
     cap.release()
-    cv2.destroyAllWindows()
+
 
 # Start face tracking thread
 thread = threading.Thread(target=face_tracking, daemon=True)
@@ -83,6 +97,7 @@ thread.start()
 
 # Settings code
 settings_file = "settings.json"
+default_settings = {"min": 0.0, "max": 10.0}
  # Function to update the JSON file
 def save_settings(wah_min, wah_max):
     # Values of the settings stored in a dictionary
@@ -90,23 +105,29 @@ def save_settings(wah_min, wah_max):
         "wah_min": wah_min,
         "wah_max": wah_max
     }
-
     # Write dictionary into file
     with open(settings_file, "w") as f:
         json.dump(setting_values, f) 
+
 # Load the stored values into variables
-def load_settings():    
+def load_settings(): 
+    # Use default values if no settings file is found   
+    if not os.path.exists(settings_file):
+        return {"wah_min": default_settings["min"], "wah_max": default_settings["max"]}
+
     # Open JSON file in read mode and get the values in the dictionary.
     with open(settings_file, "r") as f:
         data = json.load(f)
     return {
-        "wah_min": data.get("wah_min", 0.0),
-        "wah_max": data.get("wah_max", 10.0)
+        "wah_min": data.get("wah_min", default_settings["min"]),
+        "wah_max": data.get("wah_max", default_settings["max"])
     }
 
+
 # Gauge code
-# Variable for the wah gauge
+# Variables for the wah gauge
 gauge_max = 722
+gauge_color = "#e01a4f"
 # Gauge function
 def gauge(value, gauge_html):
     offset = gauge_max - (gauge_max * (value/100))
@@ -115,8 +136,10 @@ def gauge(value, gauge_html):
     gauge_html.content =  f'''
       <svg width="250" height="250" viewBox="-31.25 -31.25 312.5 312.5" version="1.1" xmlns="http://www.w3.org/2000/svg" style="transform:rotate(90deg)">
         <circle r="115" cx="125" cy="125" fill="transparent" stroke="#2A274C" stroke-width="40"></circle>
-        <circle r="115" cx="125" cy="125" stroke="#e01a4f" stroke-width="40" stroke-linecap="round" stroke-dashoffset="{offset}px" fill="transparent" stroke-dasharray="722.2px"></circle>
+        <circle r="115" cx="125" cy="125" stroke={gauge_color} stroke-width="40" stroke-linecap="round" stroke-dashoffset="{offset}px" fill="transparent" stroke-dasharray="722.2px"></circle>
         <text x="125" y="140" fill="#e8e8e8" font-size="52px" font-weight="bold" text-anchor="middle" dominant-baseline="central" style="transform:rotate(-90deg); transform-origin: 125px 125px;">{value}</text>
+      
+        <text x="125" y="165" fill="#9ca3af" font-size="18" text-anchor="middle" transform="rotate(-90 125 125)">Wah %</text>
       </svg>
     '''
     gauge_html.update()
@@ -125,7 +148,12 @@ def gauge(value, gauge_html):
 def wah_content():
     gauge_html = ui.html().classes("flex justify-center pt-20") # Creates an element for the HTML of the gauge
 
-    ui.timer(0.05, lambda: print(live_percent["percentage"]))
+    gauge(live_percent["percentage"], gauge_html)
+
+    ui.label("Gauge displays the position of the Wah pedal in percentage.\n\nOne hundred means Wah is fully open.\nZero Means Wah is fully closed.") \
+        .style(f"background-color: {text_box};") \
+        .classes("text-base rounded-lg shadow-md p-4 mt-8 whitespace-pre-line")
+
 
 def calibrate_content():
     pass
@@ -197,5 +225,11 @@ with ui.footer().classes("grid grid-cols-3 h-25 p-0 gap-0 lg:hidden")\
         .classes("h-full w-full rounded-none text-white rounded-tr-3xl")
 
 show_wah()
+
+def check_midi():
+    if midi_error:
+        ui.notify(midi_error, type="negative", position="top", close_button=True, timeout=0, icon="warning")
+
+ui.timer(0.5, check_midi, once=True)
 
 ui.run()
