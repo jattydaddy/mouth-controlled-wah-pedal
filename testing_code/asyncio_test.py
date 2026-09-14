@@ -169,7 +169,6 @@ def gauge(value, gauge_html):
 def wah_content():
     gauge_html = ui.html().classes("flex justify-center pt-20") # Creates an element for the HTML of the gauge
 
-    # Updates gauge with new value
     def update_gauge():
         gauge(live_percent["percentage"], gauge_html)
     ui.timer(0.05, update_gauge)
@@ -244,16 +243,19 @@ def show_wah():
     wah_page.set_visibility(True)
     calibrate_page.set_visibility(False)
     settings_page.set_visibility(False)
+
 def show_calibrate():
     title.set_text("Calibrate")
     wah_page.set_visibility(False)
     calibrate_page.set_visibility(True)
     settings_page.set_visibility(False)
+
 def show_settings():
     title.set_text("Settings")
     wah_page.set_visibility(False)
     calibrate_page.set_visibility(False)
     settings_page.set_visibility(True)
+
 
 # Footer with 3 column grid. Hide nav bar if screen width is wider than 1024px, so it won't show on a desktop device.
 with ui.footer().classes("grid grid-cols-3 h-25 p-0 gap-0 lg:hidden")\
