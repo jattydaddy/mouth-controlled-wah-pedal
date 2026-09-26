@@ -50,6 +50,7 @@ default_settings = {"min": 0.0, "max": 50.0}
 def save_settings(wah_min, wah_max):
     wah_min = round(wah_min, 1)
     wah_max = round(wah_max, 1)
+    
     # Update new settings for face tracking code
     global lip_distance_min, lip_distance_max
     lip_distance_min = wah_min
@@ -188,10 +189,13 @@ def calibrate_content():
         save_settings(current_lip_distance["distance"], lip_distance_max)
         if min_slider:
             min_slider.value = round(current_lip_distance["distance"], 1)
+        ui.notify("Successfully calibrated minimum", type="positive", position="top", timeout=1000)
+        
     def update_slider_max():
         save_settings(lip_distance_min, current_lip_distance["distance"])
         if max_slider:
             max_slider.value = round(current_lip_distance["distance"], 1)
+        ui.notify("Successfully calibrated maximum", type="positive", position="top", timeout=1000)
 
     # Calibrate buttons
     with ui.column().classes("w-full items-center pt-10"):
