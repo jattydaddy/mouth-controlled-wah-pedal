@@ -8,10 +8,6 @@ from nicegui import ui
 import json
 import os
 
-'''
-Credits to Theo Barnes for the icon designs. He was commissioned to create masterful pieces using his artistic skill.
-'''
-
 # Color variables   
 background = "#171516"
 buttons = "#1D1B36"
